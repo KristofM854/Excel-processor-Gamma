@@ -54,6 +54,8 @@
   details.preview h3 { font-size: .95rem; margin: 14px 0 6px; }
   #message { margin-top: 10px; min-height: 1.5em; }
   footer { color: var(--muted); font-size: 13px; text-align: center; margin-top: 24px; }
+  footer p { margin: 0 0 4px; }
+  footer a { color: var(--accent); }
   .hidden { display: none; }
 </style>
 </head>
@@ -103,7 +105,10 @@
     <div id="message" class="muted">Add at least one report file first.</div>
   </section>
 
-  <footer>Works offline once this page has loaded. Questions or problems: contact the person who sent you this link.</footer>
+  <footer>
+    <p>Built by <a href="https://kristofmoeller.com/">Kristof Moeller</a></p>
+    <p>Works offline once this page has loaded. Questions or problems: contact the person who sent you this link.</p>
+  </footer>
 </main>
 
 <script src="vendor/xlsx.full.min.js"></script>
