@@ -12,9 +12,9 @@ there is nothing to install, and files are never uploaded.
 3. Pick the output:
    - **One Excel file per report**: each workbook has a `metadata` sheet and
      a `data` sheet. Several files download as one ZIP.
-   - **One combined workbook**: `Activities (all samples)`,
-     `Peaks (all samples)` and `Metadata (all samples)`, each with one row per
-     sample (and nuclide/peak), plus one data sheet per sample.
+   - **One combined workbook**: `Data (all samples)` with one row per
+     sample, `Peaks (all samples)`, `Metadata (all samples)`, plus one data
+     sheet per sample.
 4. Click **Create Excel**. The file appears in your Downloads folder.
 
 ## What ends up in the workbook
@@ -33,15 +33,25 @@ Value, Unit and Uncertainty are only filled in when the text is clearly a
 number (with optional unit and ± uncertainty) or a `dd/mm/yyyy hh:mm:ss`
 date. Anything else (ranges, file names, versions) stays in *As printed* only.
 
-**data**: each table with its title, a header row and the data rows.
+**data**: two blocks, each under its table title.
+
+1. **One row per sample** (title `List activity / MDA`): Sample, File,
+   Acquisition date, Detector, Mass/Volume (g), Mass/Volume uncertainty (%),
+   then every isotope's values side by side: `K-40 Activ (Bq/kg)`,
+   `K-40 Uncert. (%)`, `K-40 Uncert. (Bq/kg)`, `K-40 CL (Bq/kg)`,
+   `K-40 MDA (Bq/kg)`, and so on, ending with the `SUM` values. Nuclides
+   below the detection limit have empty activity cells but keep CL and MDA.
+2. **Peak list** (`List by energies ...`): one row per peak, with the same
+   sample columns in front.
+
+Date, detector and mass also stay in the metadata sheet.
 
 - Two-line headers are joined: `Activ` + `(Bq/kg)` → `Activ (Bq/kg)`.
 - The report marks overlapping (deconvoluted) peaks with `/` and `\` in front
   of the energy, e.g. `/ 238.86`. That marker is moved into a separate
   **Multiplet** column, where peaks fitted together share a group number, so
   that *Energy* stays a number.
-- Empty cells in the report (e.g. nuclides below the detection limit) stay
-  empty, not zero. `*` in FWTM is kept as text. The `SUM` row is kept.
+- Empty cells in the report stay empty, not zero. `*` in FWTM is kept as text.
 
 ## Publishing the page (GitHub Pages)
 
