@@ -4,6 +4,8 @@ A web page that converts gamma spectrometry analysis reports (`.TXT`, e.g.
 `Spain-GL-1 II.TXT`) into Excel workbooks. It runs entirely in the browser:
 there is nothing to install, and files are never uploaded.
 
+**Open the app: https://kristofmoeller.com/Excel-processor-Gamma/**
+
 ## For users
 
 1. Open the page link.
@@ -59,7 +61,8 @@ Date, detector and mass also stay in the metadata sheet.
 2. In the repository on GitHub: **Settings → Pages → Build and deployment →
    Source: Deploy from a branch**, branch `main`, folder `/ (root)`, **Save**.
 3. After a minute the page is live at
-   `https://<github-user>.github.io/<repository-name>/`. Send that link to
+   https://kristofmoeller.com/Excel-processor-Gamma/ (the custom domain of
+   `kristofm854.github.io`; the path is case-sensitive). Send that link to
    users. Every later push to `main` updates the page automatically; users
    just reload it.
 
