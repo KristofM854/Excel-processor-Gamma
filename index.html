@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gamma Report to Excel</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --text: #1d2330; --muted: #5d6676; --line: #dde1e7;
+    --accent: #1f6feb; --accent-text: #ffffff; --ok: #1a7f37; --warn: #9a6700; --err: #cf222e;
+    --drop: #eef4ff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12151b; --panel: #1b2028; --text: #e6e9ee; --muted: #9aa3b2; --line: #2e3542;
+      --accent: #4c8dff; --accent-text: #0b1020; --ok: #3fb950; --warn: #d29922; --err: #f85149;
+      --drop: #1a2436;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 980px; margin: 0 auto; padding: 24px 16px 48px; }
+  h1 { font-size: 1.5rem; margin: 0 0 4px; }
+  h2 { font-size: 1.05rem; margin: 0 0 12px; }
+  p.lead { color: var(--muted); margin: 0 0 20px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 18px; margin-bottom: 16px; }
+  .step { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px;
+          border-radius: 50%; background: var(--accent); color: var(--accent-text); font-size: 12px; font-weight: 700; margin-right: 8px; }
+  #drop { border: 2px dashed var(--line); border-radius: 10px; padding: 28px 16px; text-align: center;
+          background: var(--drop); transition: border-color .15s; }
+  #drop.over { border-color: var(--accent); }
+  #drop p { margin: 0 0 12px; }
+  button, .btn { font: inherit; border: 1px solid var(--line); background: var(--panel); color: var(--text);
+                 padding: 7px 14px; border-radius: 7px; cursor: pointer; }
+  button:hover, .btn:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; padding: 9px 20px; }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+  .table-wrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th { color: var(--muted); font-weight: 600; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .ok { color: var(--ok); } .warn { color: var(--warn); } .err { color: var(--err); }
+  .muted { color: var(--muted); }
+  label.opt { display: flex; gap: 10px; align-items: flex-start; padding: 10px; border: 1px solid var(--line);
+              border-radius: 8px; margin-bottom: 8px; cursor: pointer; }
+  label.opt input { margin-top: 4px; }
+  label.opt small { display: block; color: var(--muted); }
+  .linkbtn { background: none; border: none; padding: 0 4px; color: var(--accent); cursor: pointer; }
+  details.preview { margin-top: 8px; }
+  details.preview summary { cursor: pointer; color: var(--accent); }
+  details.preview h3 { font-size: .95rem; margin: 14px 0 6px; }
+  #message { margin-top: 10px; min-height: 1.5em; }
+  footer { color: var(--muted); font-size: 13px; text-align: center; margin-top: 24px; }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Gamma Report to Excel</h1>
+  <p class="lead">Turns gamma spectrometry analysis reports (<code>.TXT</code>) into Excel workbooks.
+     Your files are processed on this computer and are never uploaded anywhere.</p>
+
+  <section class="panel">
+    <h2><span class="step">1</span>Add report files</h2>
+    <div id="drop">
+      <p>Drag <b>.TXT</b> report files or a whole folder here</p>
+      <div class="row">
+        <label class="btn">Choose files<input id="pickFiles" type="file" accept=".txt,.TXT,text/plain" multiple hidden></label>
+        <label class="btn">Choose folder<input id="pickFolder" type="file" webkitdirectory multiple hidden></label>
+      </div>
+    </div>
+    <div id="fileArea" class="hidden" style="margin-top:14px">
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>File</th><th>Sample</th><th>Tables</th><th>Nuclides with activity</th><th>Status</th><th></th></tr></thead>
+          <tbody id="fileRows"></tbody>
+        </table>
+      </div>
+      <div style="margin-top:10px; display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px">
+        <span id="fileCount" class="muted"></span>
+        <button id="clearAll">Remove all</button>
+      </div>
+      <div id="previewArea"></div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2><span class="step">2</span>Choose the output</h2>
+    <label class="opt"><input type="radio" name="mode" value="single" checked>
+      <span><b>One Excel file per report</b>
+      <small>Each file gets a <i>metadata</i> sheet and a <i>data</i> sheet. Several files are downloaded together as one ZIP.</small></span></label>
+    <label class="opt"><input type="radio" name="mode" value="combined">
+      <span><b>One combined workbook</b>
+      <small>Summary sheets with all samples in one list (activities, peaks, metadata), plus one data sheet per sample. Good for comparing samples or making pivot tables.</small></span></label>
+  </section>
+
+  <section class="panel">
+    <h2><span class="step">3</span>Create the Excel file</h2>
+    <button id="go" class="primary" disabled>Create Excel</button>
+    <div id="message" class="muted">Add at least one report file first.</div>
+  </section>
+
+  <footer>Works offline once this page has loaded. Questions or problems: contact the person who sent you this link.</footer>
+</main>
+
+<script src="vendor/xlsx.full.min.js"></script>
+<script src="vendor/jszip.min.js"></script>
+<script src="parser.js"></script>
+<script src="workbook.js"></script>
+<script>
+(function () {
+  'use strict';
+  const $ = (id) => document.getElementById(id);
+  const items = [];   // { file, path, report, error }
+
+  const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const isTxt = (name) => /\.txt$/i.test(name);
+
+  async function addFiles(fileList) {
+    const files = [...fileList].filter((f) => isTxt(f.name));
+    const skipped = fileList.length - files.length;
+    for (const file of files) {
+      const path = file.webkitRelativePath || file._path || file.name;
+      if (items.some((it) => it.path === path && it.file.size === file.size)) continue;
+      const item = { file, path, report: null, error: null };
+      try {
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        item.report = GammaParser.parseReport(GammaParser.decodeBytes(bytes), file.name);
+        if (!item.report.tables.length) item.error = 'No tables found. Is this a gamma analysis report?';
+      } catch (e) {
+        item.error = 'Could not read this file: ' + e.message;
+      }
+      items.push(item);
+    }
+    render();
+    if (skipped > 0) setMessage(skipped + ' file(s) ignored because they are not .TXT files.', 'muted');
+  }
+
+  // Folders dropped onto the page
+  function readEntry(entry, prefix) {
+    return new Promise((resolve) => {
+      if (entry.isFile) {
+        entry.file((f) => { f._path = prefix + f.name; resolve([f]); }, () => resolve([]));
+      } else if (entry.isDirectory) {
+        const reader = entry.createReader();
+        const all = [];
+        const next = () => reader.readEntries(async (batch) => {
+          if (!batch.length) {
+            const nested = await Promise.all(all.map((e) => readEntry(e, prefix + entry.name + '/')));
+            resolve(nested.flat());
+          } else { all.push(...batch); next(); }
+        }, () => resolve([]));
+        next();
+      } else resolve([]);
+    });
+  }
+
+  function activityCount(rep) {
+    const t = rep.tables.find((x) => /activ|MDA/i.test(x.title));
+    if (!t) return '–';
+    const col = t.headers.findIndex((h) => /^activ/i.test(h));
+    if (col < 0) return '–';
+    return t.rows.filter((r) => !r.footer && typeof r.cells[col] === 'number').length;
+  }
+
+  function render() {
+    $('fileArea').classList.toggle('hidden', items.length === 0);
+    $('fileRows').innerHTML = items.map((it, i) => {
+      const r = it.report;
+      const status = it.error ? '<span class="err">' + esc(it.error) + '</span>'
+        : r.warnings.length ? '<span class="warn">' + esc(r.warnings.join(' ')) + '</span>'
+        : '<span class="ok">Ready</span>';
+      return '<tr><td>' + esc(it.path) + '</td><td>' + (r ? esc(r.sample) : '') + '</td>' +
+        '<td class="num">' + (r ? r.tables.length : '') + '</td><td class="num">' + (r && !it.error ? activityCount(r) : '') + '</td>' +
+        '<td>' + status + '</td><td>' +
+        (r && !it.error ? '<button class="linkbtn" data-preview="' + i + '">Preview</button>' : '') +
+        '<button class="linkbtn" data-remove="' + i + '" title="Remove">✕</button></td></tr>';
+    }).join('');
+    const good = items.filter((it) => !it.error).length;
+    const bad = items.length - good;
+    $('fileCount').textContent = good + ' file(s) ready' + (bad ? ', ' + bad + ' with problems (will be skipped)' : '');
+    $('go').disabled = good === 0;
+    if (good === 0) { $('previewArea').innerHTML = ''; setMessage('Add at least one report file first.', 'muted'); }
+    else setMessage('', 'muted');
+  }
+
+  function fmt(v) {
+    if (v === null || v === undefined) return '';
+    if (typeof v === 'object' && v.year) {
+      const p = (n) => String(n).padStart(2, '0');
+      return p(v.day) + '/' + p(v.month) + '/' + v.year + (v.hasTime ? ' ' + p(v.hour) + ':' + p(v.minute) + ':' + p(v.second) : '');
+    }
+    return String(v);
+  }
+
+  function tableHtml(headers, rows) {
+    return '<div class="table-wrap"><table><thead><tr>' + headers.map((h) => '<th>' + esc(h) + '</th>').join('') +
+      '</tr></thead><tbody>' + rows.map((r) => '<tr>' + r.map((c) => '<td class="' + (typeof c === 'number' ? 'num' : '') + '">' + esc(fmt(c)) + '</td>').join('') + '</tr>').join('') +
+      '</tbody></table></div>';
+  }
+
+  function showPreview(i) {
+    const r = items[i].report;
+    let html = '<details class="preview" open><summary>Preview: ' + esc(r.sample) + '</summary>';
+    html += '<h3>metadata</h3>' + tableHtml(['Field', 'As printed', 'Value', 'Unit', 'Uncertainty'],
+      r.metadata.map((m) => [m.field, m.raw, m.kind === 'number' || m.kind === 'date' ? m.value : null, m.unit, m.uncertainty]));
+    for (const t of r.tables) html += '<h3>data: ' + esc(t.title) + '</h3>' + tableHtml(t.headers, t.rows.map((x) => x.cells));
+    html += '</details>';
+    $('previewArea').innerHTML = html;
+  }
+
+  function setMessage(text, cls) { const m = $('message'); m.className = cls; m.textContent = text; }
+
+  function download(data, name, type) {
+    const blob = data instanceof Blob ? data : new Blob([data], { type });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  }
+
+  const XLSX_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+  const stamp = () => { const d = new Date(), p = (n) => String(n).padStart(2, '0');
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + '_' + p(d.getHours()) + p(d.getMinutes()); };
+
+  async function create() {
+    const good = items.filter((it) => !it.error);
+    if (!good.length) return;
+    const mode = document.querySelector('input[name=mode]:checked').value;
+    $('go').disabled = true;
+    setMessage('Working…', 'muted');
+    try {
+      if (mode === 'combined') {
+        const wb = GammaWorkbook.buildCombined(good.map((it) => it.report));
+        download(GammaWorkbook.toArrayBuffer(wb), 'Gamma_combined_' + stamp() + '.xlsx', XLSX_TYPE);
+      } else if (good.length === 1) {
+        const it = good[0];
+        download(GammaWorkbook.toArrayBuffer(GammaWorkbook.buildSingle(it.report)), it.file.name.replace(/\.txt$/i, '') + '.xlsx', XLSX_TYPE);
+      } else {
+        const zip = new JSZip();
+        const used = new Set();
+        for (const it of good) {
+          let name = it.file.name.replace(/\.txt$/i, ''), n = name, k = 2;
+          while (used.has(n.toLowerCase())) n = name + ' (' + k++ + ')';
+          used.add(n.toLowerCase());
+          zip.file(n + '.xlsx', GammaWorkbook.toArrayBuffer(GammaWorkbook.buildSingle(it.report)));
+        }
+        download(await zip.generateAsync({ type: 'blob' }), 'Gamma_excel_' + stamp() + '.zip');
+      }
+      const skipped = items.length - good.length;
+      setMessage('Done. ' + good.length + ' report(s) converted' + (skipped ? ', ' + skipped + ' skipped because of problems' : '') +
+        '. Check your Downloads folder.', 'ok');
+    } catch (e) {
+      setMessage('Something went wrong: ' + e.message, 'err');
+    } finally {
+      $('go').disabled = false;
+    }
+  }
+
+  // ---------- wiring ----------
+  $('pickFiles').addEventListener('change', (e) => { addFiles(e.target.files); e.target.value = ''; });
+  $('pickFolder').addEventListener('change', (e) => { addFiles(e.target.files); e.target.value = ''; });
+  $('clearAll').addEventListener('click', () => { items.length = 0; render(); });
+  $('go').addEventListener('click', create);
+  $('fileRows').addEventListener('click', (e) => {
+    const t = e.target;
+    if (t.dataset.remove !== undefined) { items.splice(+t.dataset.remove, 1); render(); }
+    if (t.dataset.preview !== undefined) showPreview(+t.dataset.preview);
+  });
+
+  const drop = $('drop');
+  ['dragenter', 'dragover'].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add('over'); }));
+  ['dragleave', 'drop'].forEach((ev) => drop.addEventListener(ev, () => drop.classList.remove('over')));
+  // Stop the browser from opening a file dropped next to the box
+  window.addEventListener('dragover', (e) => e.preventDefault());
+  window.addEventListener('drop', (e) => e.preventDefault());
+  drop.addEventListener('drop', async (e) => {
+    e.preventDefault();
+    const entries = [...(e.dataTransfer.items || [])].map((it) => it.webkitGetAsEntry && it.webkitGetAsEntry()).filter(Boolean);
+    if (entries.length) addFiles((await Promise.all(entries.map((en) => readEntry(en, '')))).flat());
+    else addFiles(e.dataTransfer.files);
+  });
+})();
+</script>
+</body>
+</html>
