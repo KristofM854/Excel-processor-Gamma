@@ -61,13 +61,85 @@
     return rows;
   }
 
-  function dataRows(report) {
+  // ---------- sample info + one-row-per-sample activities ----------
+
+  const isActivityTable = (t) => /activ|MDA/i.test(t.title) || (t.headers.some((h) => /^isotope$/i.test(h)) && !t.headers.some((h) => /^energy$/i.test(h)));
+  const findMeta = (rep, re) => rep.metadata.find((m) => re.test(m.field));
+
+  // [header, value] pairs repeated on every data row: date, detector, mass, mass uncertainty
+  function sampleInfo(rep) {
+    const out = [['Sample', rep.sample], ['File', rep.fileName]];
+    const date = findMeta(rep, /^acquisition date$/i);
+    out.push(['Acquisition date', date && date.kind === 'date' ? date.value : date ? date.raw : null]);
+    const det = findMeta(rep, /^detector$/i);
+    out.push(['Detector', det ? (det.kind === 'number' ? det.value : det.raw) : null]);
+    const mass = findMeta(rep, /^mass\s*\/\s*volume$/i) || findMeta(rep, /^mass/i);
+    const label = mass ? mass.field : 'Mass/Volume';
+    if (mass && mass.kind === 'number') {
+      out.push([label + (mass.unit ? ' (' + mass.unit + ')' : ''), mass.value]);
+      const u = /^([-+]?[\d.]+(?:[eE][-+]?\d+)?)\s*(.*)$/.exec(mass.uncertainty || '');
+      out.push([label + ' uncertainty' + (u && u[2] ? ' (' + u[2] + ')' : ''), u ? Number(u[1]) : null]);
+    } else {
+      out.push([label, mass ? mass.raw : null], [label + ' uncertainty', null]);
+    }
+    return out;
+  }
+
+  // Activity table flattened: "K-40 Activ (Bq/kg)", "K-40 Uncert. (%)", ...
+  function wideActivities(rep) {
+    const t = rep.tables.find(isActivityTable);
+    if (!t) return [];
+    const isoCol = t.headers.findIndex((h) => /^isotope$/i.test(h));
+    if (isoCol < 0) return [];
+    const out = [];
+    for (const r of t.rows) {
+      const iso = r.cells[isoCol];
+      if (iso === null || iso === undefined) continue;
+      t.headers.forEach((h, c) => {
+        if (c === isoCol || /^no\.?$/i.test(h)) return;
+        if (r.footer && (r.cells[c] === null || r.cells[c] === undefined)) return; // e.g. SUM has no CL/MDA
+        out.push([iso + ' ' + h, r.cells[c]]);
+      });
+    }
+    return out;
+  }
+
+  // Merge [header, value] lists of several samples into one table (union of columns, first-seen order).
+  function unionRows(lists) {
+    const headers = [];
+    const seen = new Set();
+    for (const l of lists) for (const [h] of l) if (!seen.has(h)) { seen.add(h); headers.push(h); }
+    const rows = lists.map((l) => { const m = new Map(l); return headers.map((h) => (m.has(h) ? m.get(h) : null)); });
+    return { headers, rows };
+  }
+
+  // Blocks shown on a data sheet: the one-row-per-sample activity block, then every other table as a list.
+  function dataBlocks(reports) {
+    const blocks = [];
+    const act = reports.map((r) => r.tables.find(isActivityTable)).find(Boolean);
+    const wide = unionRows(reports.map((r) => [...sampleInfo(r), ...wideActivities(r)]));
+    blocks.push({ title: act ? act.title : 'Activities', headers: wide.headers, rows: wide.rows });
+    const titles = [];
+    for (const r of reports) for (const t of r.tables) if (!isActivityTable(t) && !titles.includes(t.title)) titles.push(t.title);
+    for (const title of titles) {
+      const lists = [];
+      for (const r of reports) {
+        const t = r.tables.find((x) => x.title === title);
+        if (!t) continue;
+        const info = sampleInfo(r);
+        for (const row of t.rows) lists.push([...info, ...t.headers.map((h, i) => [h, row.cells[i]])]);
+      }
+      const u = unionRows(lists);
+      blocks.push({ title, headers: u.headers, rows: u.rows });
+    }
+    return blocks;
+  }
+
+  function blockRows(blocks) {
     const rows = [];
-    report.tables.forEach((t, i) => {
+    blocks.forEach((b, i) => {
       if (i > 0) rows.push([], []);
-      rows.push([t.title]);
-      rows.push(t.headers);
-      for (const r of t.rows) rows.push(r.cells);
+      rows.push([b.title], b.headers, ...b.rows);
     });
     return rows;
   }
@@ -75,17 +147,11 @@
   function buildSingle(report) {
     const wb = XLSX.utils.book_new();
     addSheet(wb, makeSheet(metadataRows(report)), 'metadata');
-    addSheet(wb, makeSheet(dataRows(report)), 'data');
+    addSheet(wb, makeSheet(blockRows(dataBlocks([report]))), 'data');
     return wb;
   }
 
   // ---------- combined workbook ----------
-
-  function summarySheetName(title) {
-    if (/energ/i.test(title)) return 'Peaks (all samples)';
-    if (/activ|MDA/i.test(title)) return 'Activities (all samples)';
-    return title + ' (all)';
-  }
 
   // One wide row per sample; numeric/date fields become real numbers.
   function wideMetadataRows(reports) {
@@ -129,40 +195,24 @@
     return rows;
   }
 
-  // For each table title: one long table with Sample + File columns prepended.
-  function longTables(reports) {
-    const groups = new Map();
-    for (const rep of reports) for (const t of rep.tables) {
-      if (!groups.has(t.title)) groups.set(t.title, { headers: [], rows: [] });
-      const g = groups.get(t.title);
-      for (const h of t.headers) if (!g.headers.includes(h)) g.headers.push(h);
-      for (const r of t.rows) {
-        const obj = {};
-        t.headers.forEach((h, i) => { obj[h] = r.cells[i]; });
-        g.rows.push({ sample: rep.sample, file: rep.fileName, obj });
-      }
-    }
-    return [...groups.entries()].map(([title, g]) => ({
-      title,
-      rows: [['Sample', 'File', ...g.headers], ...g.rows.map((x) => [x.sample, x.file, ...g.headers.map((h) => (x.obj[h] === undefined ? null : x.obj[h]))])],
-    }));
+  function summarySheetName(title, i) {
+    if (i === 0) return 'Data (all samples)';
+    if (/energ/i.test(title)) return 'Peaks (all samples)';
+    return title + ' (all)';
   }
 
   function buildCombined(reports) {
     const wb = XLSX.utils.book_new();
-    const longs = longTables(reports);
-    // Activities first: it is the table people compare across samples.
-    longs.sort((a, b) => (/activ|MDA/i.test(b.title) ? 1 : 0) - (/activ|MDA/i.test(a.title) ? 1 : 0));
-    for (const l of longs) {
-      const ws = makeSheet(l.rows);
+    dataBlocks(reports).forEach((b, i) => {
+      const ws = makeSheet([b.headers, ...b.rows]);
       ws['!autofilter'] = { ref: ws['!ref'] };
-      addSheet(wb, ws, summarySheetName(l.title));
-    }
+      addSheet(wb, ws, summarySheetName(b.title, i));
+    });
     const meta = makeSheet(wideMetadataRows(reports));
     meta['!autofilter'] = { ref: meta['!ref'] };
     addSheet(wb, meta, 'Metadata (all samples)');
     for (const rep of reports) {
-      addSheet(wb, makeSheet(dataRows(rep)), rep.sample);
+      addSheet(wb, makeSheet(blockRows(dataBlocks([rep]))), rep.sample);
     }
     return wb;
   }
@@ -171,5 +221,5 @@
     return XLSX.write(wb, { bookType: 'xlsx', type: 'array', compression: true });
   }
 
-  return { buildSingle, buildCombined, toArrayBuffer };
+  return { buildSingle, buildCombined, toArrayBuffer, dataBlocks, metadataRows };
 });

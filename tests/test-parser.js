@@ -71,3 +71,32 @@ const bytes = Uint8Array.from([0x35, 0x20, 0x67, 0x20, 0xb1, 0x20, 0x31, 0x20, 0
 assert.strictEqual(P.decodeBytes(bytes), '5 g ± 1 %');
 
 console.log('All parser tests passed.');
+
+// ---------- workbook layout ----------
+const XLSX = require('../vendor/xlsx.full.min.js');
+const W = require('../workbook.js')(XLSX, P);
+const [wide, peakList] = W.dataBlocks([r]);
+assert.deepStrictEqual(wide.headers.slice(0, 6),
+  ['Sample', 'File', 'Acquisition date', 'Detector', 'Mass/Volume (g)', 'Mass/Volume uncertainty (%)']);
+assert.strictEqual(wide.rows.length, 1); // one row per sample
+const col = (h) => wide.rows[0][wide.headers.indexOf(h)];
+assert.strictEqual(col('Mass/Volume (g)'), 5.02);
+assert.strictEqual(col('Mass/Volume uncertainty (%)'), 0.1);
+assert.strictEqual(col('Detector'), null); // not in the synthetic report
+assert.strictEqual(col('K-40 Activ (Bq/kg)'), 851.8);
+assert.strictEqual(col('BE-7 Activ (Bq/kg)'), null);
+assert.strictEqual(col('BE-7 MDA (Bq/kg)'), 20.83);
+assert.strictEqual(col('SUM Activ (Bq/kg)'), 1367);
+assert.ok(!wide.headers.includes('SUM MDA (Bq/kg)'));
+assert.strictEqual(peakList.title, 'List by energies (with confirmed isotopes)');
+assert.strictEqual(peakList.rows.length, 3);
+assert.strictEqual(peakList.headers[0], 'Sample');
+
+// combined: one row per sample on the data sheet
+const r2 = P.parseReport(report.replace('Test-1 A.SPE', 'Test-2.SPE'), 'Test-2.TXT');
+const wb = W.buildCombined([r, r2]);
+assert.deepStrictEqual(wb.SheetNames.slice(0, 3), ['Data (all samples)', 'Peaks (all samples)', 'Metadata (all samples)']);
+const data = XLSX.utils.sheet_to_json(wb.Sheets['Data (all samples)'], { header: 1 });
+assert.strictEqual(data.length, 3);
+
+console.log('All workbook tests passed.');

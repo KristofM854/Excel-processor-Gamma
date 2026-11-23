@@ -93,10 +93,10 @@
     <h2><span class="step">2</span>Choose the output</h2>
     <label class="opt"><input type="radio" name="mode" value="single" checked>
       <span><b>One Excel file per report</b>
-      <small>Each file gets a <i>metadata</i> sheet and a <i>data</i> sheet. Several files are downloaded together as one ZIP.</small></span></label>
+      <small>Each file gets a <i>metadata</i> sheet and a <i>data</i> sheet. On the data sheet, the sample is one row with date, detector, mass and all isotope activities, followed by the peak list. Several files are downloaded together as one ZIP.</small></span></label>
     <label class="opt"><input type="radio" name="mode" value="combined">
       <span><b>One combined workbook</b>
-      <small>Summary sheets with all samples in one list (activities, peaks, metadata), plus one data sheet per sample. Good for comparing samples or making pivot tables.</small></span></label>
+      <small><i>Data (all samples)</i> has one row per sample with date, detector, mass and all isotope activities. Also includes all peaks in one list, all metadata, and one data sheet per sample. Good for comparing samples.</small></span></label>
   </section>
 
   <section class="panel">
@@ -212,7 +212,7 @@
     let html = '<details class="preview" open><summary>Preview: ' + esc(r.sample) + '</summary>';
     html += '<h3>metadata</h3>' + tableHtml(['Field', 'As printed', 'Value', 'Unit', 'Uncertainty'],
       r.metadata.map((m) => [m.field, m.raw, m.kind === 'number' || m.kind === 'date' ? m.value : null, m.unit, m.uncertainty]));
-    for (const t of r.tables) html += '<h3>data: ' + esc(t.title) + '</h3>' + tableHtml(t.headers, t.rows.map((x) => x.cells));
+    for (const b of GammaWorkbook.dataBlocks([r])) html += '<h3>data: ' + esc(b.title) + '</h3>' + tableHtml(b.headers, b.rows);
     html += '</details>';
     $('previewArea').innerHTML = html;
   }
