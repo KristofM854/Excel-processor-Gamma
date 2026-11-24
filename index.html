@@ -57,6 +57,16 @@
   footer p { margin: 0 0 4px; }
   footer a { color: var(--accent); }
   .hidden { display: none; }
+  .depthcol { display: none; }
+  .show-depth .depthcol { display: table-cell; }
+  input.depth { width: 80px; font: inherit; padding: 3px 6px; border: 1px solid var(--line); border-radius: 5px;
+                background: var(--panel); color: var(--text); text-align: right; }
+  #coreBox { margin: 4px 0 8px 32px; padding: 12px; border-left: 3px solid var(--accent); }
+  #coreBox .fields { display: flex; gap: 16px; flex-wrap: wrap; margin: 8px 0; }
+  #coreBox label { display: flex; flex-direction: column; font-size: 14px; color: var(--muted); }
+  #coreBox input { font: inherit; padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px;
+                   background: var(--panel); color: var(--text); margin-top: 3px; }
+  #coreBox p { margin: 0; font-size: 13px; color: var(--muted); }
 </style>
 </head>
 <body>
@@ -76,8 +86,8 @@
     </div>
     <div id="fileArea" class="hidden" style="margin-top:14px">
       <div class="table-wrap">
-        <table>
-          <thead><tr><th>File</th><th>Sample</th><th>Tables</th><th>Nuclides with activity</th><th>Status</th><th></th></tr></thead>
+        <table id="fileTable">
+          <thead><tr><th>File</th><th>Sample</th><th class="depthcol">Depth (cm)</th><th>Tables</th><th>Nuclides with activity</th><th>Status</th><th></th></tr></thead>
           <tbody id="fileRows"></tbody>
         </table>
       </div>
@@ -96,7 +106,16 @@
       <small>Each file gets a <i>metadata</i> sheet and a <i>data</i> sheet. On the data sheet, the sample is one row with date, detector, mass and all isotope activities, followed by the peak list. Several files are downloaded together as one ZIP.</small></span></label>
     <label class="opt"><input type="radio" name="mode" value="combined">
       <span><b>One combined workbook</b>
-      <small><i>Data (all samples)</i> has one row per sample with date, detector, mass and all isotope activities. Also includes all peaks in one list, all metadata, and one data sheet per sample. Good for comparing samples.</small></span></label>
+      <small>For a sediment core or any series of samples. Includes <i>Profiles</i> (depth profile charts), <i>Summary</i> (one row per sample with all nuclides), <i>Nuclear data</i>, all data, peaks and metadata, and one data sheet per sample.</small></span></label>
+    <div id="coreBox" class="hidden">
+      <b>Core details (optional)</b>
+      <div class="fields">
+        <label>Core name<input id="coreName" type="text" placeholder="e.g. SAMO 14-2"></label>
+        <label>Sampling date<input id="samplingDate" type="date"></label>
+      </div>
+      <p>Enter each sample's depth in the file list above. Depths are filled in automatically when the sample name ends in a range like "2-3" (gives 2.5 cm).</p>
+      <p><b>You can skip all of this</b> and fill it in later in the <i>Summary</i> sheet of the Excel file (cells B1, E1 and the Depth column). The profile charts update automatically.</p>
+    </div>
   </section>
 
   <section class="panel">
@@ -114,6 +133,7 @@
 <script src="vendor/xlsx.full.min.js"></script>
 <script src="vendor/jszip.min.js"></script>
 <script src="parser.js"></script>
+<script src="core.js"></script>
 <script src="workbook.js"></script>
 <script>
 (function () {
@@ -130,11 +150,12 @@
     for (const file of files) {
       const path = file.webkitRelativePath || file._path || file.name;
       if (items.some((it) => it.path === path && it.file.size === file.size)) continue;
-      const item = { file, path, report: null, error: null };
+      const item = { file, path, report: null, error: null, depth: null };
       try {
         const bytes = new Uint8Array(await file.arrayBuffer());
         item.report = GammaParser.parseReport(GammaParser.decodeBytes(bytes), file.name);
         if (!item.report.tables.length) item.error = 'No tables found. Is this a gamma analysis report?';
+        item.depth = GammaCore.guessDepth(item.report.sample);
       } catch (e) {
         item.error = 'Could not read this file: ' + e.message;
       }
@@ -179,6 +200,7 @@
         : r.warnings.length ? '<span class="warn">' + esc(r.warnings.join(' ')) + '</span>'
         : '<span class="ok">Ready</span>';
       return '<tr><td>' + esc(it.path) + '</td><td>' + (r ? esc(r.sample) : '') + '</td>' +
+        '<td class="depthcol">' + (r && !it.error ? '<input class="depth" type="number" step="any" min="0" data-depth="' + i + '" value="' + (it.depth ?? '') + '" aria-label="Depth in cm">' : '') + '</td>' +
         '<td class="num">' + (r ? r.tables.length : '') + '</td><td class="num">' + (r && !it.error ? activityCount(r) : '') + '</td>' +
         '<td>' + status + '</td><td>' +
         (r && !it.error ? '<button class="linkbtn" data-preview="' + i + '">Preview</button>' : '') +
@@ -241,11 +263,19 @@
     setMessage('Working…', 'muted');
     try {
       if (mode === 'combined') {
-        const wb = GammaWorkbook.buildCombined(good.map((it) => it.report));
-        download(GammaWorkbook.toArrayBuffer(wb), 'Gamma_combined_' + stamp() + '.xlsx', XLSX_TYPE);
+        const d = $('samplingDate').value;   // yyyy-mm-dd or ''
+        const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d);
+        const core = {
+          name: $('coreName').value.trim(),
+          samplingDate: m ? { year: +m[1], month: +m[2], day: +m[3], hour: 0, minute: 0, second: 0, hasTime: false } : null,
+          depths: good.map((it) => (typeof it.depth === 'number' && !Number.isNaN(it.depth) ? it.depth : null)),
+        };
+        const wb = GammaWorkbook.buildCombined(good.map((it) => it.report), core);
+        const name = (core.name ? core.name.replace(/[\\/:*?"<>|]+/g, '_') + '_' : 'Gamma_combined_') + stamp() + '.xlsx';
+        download(await GammaWorkbook.toArrayBuffer(wb), name, XLSX_TYPE);
       } else if (good.length === 1) {
         const it = good[0];
-        download(GammaWorkbook.toArrayBuffer(GammaWorkbook.buildSingle(it.report)), it.file.name.replace(/\.txt$/i, '') + '.xlsx', XLSX_TYPE);
+        download(await GammaWorkbook.toArrayBuffer(GammaWorkbook.buildSingle(it.report)), it.file.name.replace(/\.txt$/i, '') + '.xlsx', XLSX_TYPE);
       } else {
         const zip = new JSZip();
         const used = new Set();
@@ -253,7 +283,7 @@
           let name = it.file.name.replace(/\.txt$/i, ''), n = name, k = 2;
           while (used.has(n.toLowerCase())) n = name + ' (' + k++ + ')';
           used.add(n.toLowerCase());
-          zip.file(n + '.xlsx', GammaWorkbook.toArrayBuffer(GammaWorkbook.buildSingle(it.report)));
+          zip.file(n + '.xlsx', await GammaWorkbook.toArrayBuffer(GammaWorkbook.buildSingle(it.report)));
         }
         download(await zip.generateAsync({ type: 'blob' }), 'Gamma_excel_' + stamp() + '.zip');
       }
@@ -272,6 +302,20 @@
   $('pickFolder').addEventListener('change', (e) => { addFiles(e.target.files); e.target.value = ''; });
   $('clearAll').addEventListener('click', () => { items.length = 0; render(); });
   $('go').addEventListener('click', create);
+  function syncMode() {
+    const combined = document.querySelector('input[name=mode]:checked').value === 'combined';
+    $('coreBox').classList.toggle('hidden', !combined);
+    $('fileTable').classList.toggle('show-depth', combined);
+  }
+  document.querySelectorAll('input[name=mode]').forEach((r) => r.addEventListener('change', syncMode));
+  syncMode();
+  $('fileRows').addEventListener('input', (e) => {
+    const t = e.target;
+    if (t.dataset.depth !== undefined) {
+      const v = t.value.trim() === '' ? null : parseFloat(t.value);
+      items[+t.dataset.depth].depth = v;
+    }
+  });
   $('fileRows').addEventListener('click', (e) => {
     const t = e.target;
     if (t.dataset.remove !== undefined) { items.splice(+t.dataset.remove, 1); render(); }

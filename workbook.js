@@ -4,8 +4,8 @@
  */
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory;
-  else root.GammaWorkbook = factory(root.XLSX, root.GammaParser);
-})(typeof self !== 'undefined' ? self : this, function (XLSX, GammaParser) {
+  else root.GammaWorkbook = factory(root.XLSX, root.GammaParser, root.GammaCore);
+})(typeof self !== 'undefined' ? self : this, function (XLSX, GammaParser, GammaCore) {
   'use strict';
 
   const DATE_FMT = 'dd/mm/yyyy hh:mm:ss';
@@ -201,8 +201,17 @@
     return title + ' (all)';
   }
 
-  function buildCombined(reports) {
+  // core: { name, samplingDate, depths[] } (all optional) for Summary / Profiles
+  function buildCombined(reports, core) {
     const wb = XLSX.utils.book_new();
+    if (GammaCore) {
+      const model = GammaCore.buildModel(reports, core);
+      const prof = GammaCore.profilesSheet(model);
+      addSheet(wb, prof.ws, 'Profiles');
+      addSheet(wb, GammaCore.summarySheet(model), 'Summary');
+      addSheet(wb, GammaCore.nuclearSheet(), 'Nuclear data');
+      wb._charts = { sheet: 'Profiles', charts: prof.charts };
+    }
     dataBlocks(reports).forEach((b, i) => {
       const ws = makeSheet([b.headers, ...b.rows]);
       ws['!autofilter'] = { ref: ws['!ref'] };
@@ -217,8 +226,11 @@
     return wb;
   }
 
-  function toArrayBuffer(wb) {
-    return XLSX.write(wb, { bookType: 'xlsx', type: 'array', compression: true });
+  // Returns a Promise<ArrayBuffer>; charts are added after SheetJS has written the file.
+  async function toArrayBuffer(wb) {
+    const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array', compression: true });
+    if (wb._charts && GammaCore) return GammaCore.injectCharts(buf, wb._charts.sheet, wb._charts.charts);
+    return buf;
   }
 
   return { buildSingle, buildCombined, toArrayBuffer, dataBlocks, metadataRows };

@@ -74,7 +74,9 @@ console.log('All parser tests passed.');
 
 // ---------- workbook layout ----------
 const XLSX = require('../vendor/xlsx.full.min.js');
-const W = require('../workbook.js')(XLSX, P);
+const JSZip = require('../vendor/jszip.min.js');
+const C = require('../core.js')(XLSX, JSZip, P);
+const W = require('../workbook.js')(XLSX, P, C);
 const [wide, peakList] = W.dataBlocks([r]);
 assert.deepStrictEqual(wide.headers.slice(0, 6),
   ['Sample', 'File', 'Acquisition date', 'Detector', 'Mass/Volume (g)', 'Mass/Volume uncertainty (%)']);
@@ -95,8 +97,49 @@ assert.strictEqual(peakList.headers[0], 'Sample');
 // combined: one row per sample on the data sheet
 const r2 = P.parseReport(report.replace('Test-1 A.SPE', 'Test-2.SPE'), 'Test-2.TXT');
 const wb = W.buildCombined([r, r2]);
-assert.deepStrictEqual(wb.SheetNames.slice(0, 3), ['Data (all samples)', 'Peaks (all samples)', 'Metadata (all samples)']);
+assert.deepStrictEqual(wb.SheetNames.slice(0, 6),
+  ['Profiles', 'Summary', 'Nuclear data', 'Data (all samples)', 'Peaks (all samples)', 'Metadata (all samples)']);
 const data = XLSX.utils.sheet_to_json(wb.Sheets['Data (all samples)'], { header: 1 });
 assert.strictEqual(data.length, 3);
 
 console.log('All workbook tests passed.');
+
+// ---------- Summary / Profiles / Nuclear data ----------
+assert.strictEqual(C.normIso('CS-137E'), 'Cs-137');
+assert.strictEqual(C.normIso('AM-241'), 'Am-241');
+assert.strictEqual(C.guessDepth('SAMO 14-2 2-3'), 2.5);
+assert.strictEqual(C.guessDepth('Spain-GL-1 II'), null);
+assert.strictEqual(C.guessDepth('SAMO 14-2'), null); // 14-2 is not an increasing range
+
+const rich = P.parseReport(report
+  .replace('Comment:', 'Acquisition date:             14/08/2026 14:35:52\r\nComment:')
+  .replace('|  2|K-40     |  8.518E+02  |   8.760E+01   |',
+    '|  2|K-40     |  8.518E+02  |   8.760E+01   |\r\n' +
+    '|  3|PB-210   |  3.000E+02  |   3.000E+01   |\r\n' +
+    '|  4|PB-214   |  5.000E+01  |   8.000E+00   |'),
+  'Test-1 A.TXT');
+const sampling = { year: 2026, month: 3, day: 1, hour: 0, minute: 0, second: 0 };
+const model = C.buildModel([rich], { samplingDate: sampling, depths: [2.5] });
+assert.deepStrictEqual(model.nuclides.slice(0, 3), ['K-40', 'Pb-210', 'Pb-214']);
+assert.strictEqual(model.samples[0].acts.get('Be-7').flag, '<');
+const sum = C.summarySheet(model);
+assert.strictEqual(sum.B5.v, 'Test-1 A');
+assert.strictEqual(sum.D5.v, 2.5);
+const prof = C.profilesSheet(model);
+assert.strictEqual(prof.charts.length, 6);
+// exPb-210 corr = (300 - 50) * exp(ln2/22.23 * dt), dt in years from sampling to measurement
+const measured = { year: 2026, month: 8, day: 14, hour: 14, minute: 35, second: 52 };
+const dt = (P.excelSerial(measured) - P.excelSerial(sampling)) / 365.25;
+const ex = Object.values(prof.ws).find((c) => c && c.f && /^IF\(OR\(/.test(c.f));
+assert.ok(Math.abs(ex.v - 250 * Math.exp(Math.LN2 / 22.23 * dt)) < 1e-9);
+const nd = C.nuclearSheet();
+assert.strictEqual(nd.A3.v, 'Pb-210');
+assert.strictEqual(nd.G3.f, 'LN(2)/E3');
+
+(async () => {
+  const buf = await W.toArrayBuffer(W.buildCombined([rich], { depths: [2.5] }));
+  const zip = await JSZip.loadAsync(buf);
+  assert.ok(zip.file('xl/charts/chart6.xml'));
+  assert.ok(/<drawing r:id=/.test(await zip.file('xl/worksheets/sheet1.xml').async('string')));
+  console.log('All Summary/Profiles tests passed.');
+})().catch((e) => { console.error(e); process.exit(1); });
