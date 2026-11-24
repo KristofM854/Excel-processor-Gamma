@@ -4,8 +4,8 @@
  */
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory;
-  else root.GammaWorkbook = factory(root.XLSX, root.GammaParser);
-})(typeof self !== 'undefined' ? self : this, function (XLSX, GammaParser) {
+  else root.GammaWorkbook = factory(root.XLSX, root.GammaParser, root.GammaCore);
+})(typeof self !== 'undefined' ? self : this, function (XLSX, GammaParser, GammaCore) {
   'use strict';
 
   const DATE_FMT = 'dd/mm/yyyy hh:mm:ss';
@@ -85,6 +85,27 @@
     return out;
   }
 
+  // Generic metadata column: number -> "Field (unit)" value, date -> date, otherwise the text as printed.
+  function metaColumn(rep, field) {
+    const m = rep.metadata.find((x) => x.field.toLowerCase() === field.toLowerCase());
+    if (!m) return [field, null];
+    if (m.kind === 'number') return [field + (m.unit ? ' (' + m.unit + ')' : ''), m.value];
+    if (m.kind === 'date') return [field, m.value];
+    return [field, m.raw === '' ? null : m.raw];
+  }
+
+  // Columns of the one-row-per-sample table: sample, file, detector, then acquisition details.
+  function wideInfo(rep) {
+    const [sample, file, acqDate, detector, mass, massUnc] = sampleInfo(rep);
+    return [
+      sample, file, detector,
+      metaColumn(rep, 'Acq.time (live)'), metaColumn(rep, 'Acq.time (real)'),
+      metaColumn(rep, 'Dead time'), metaColumn(rep, 'Count rate'),
+      acqDate, mass, massUnc,
+      metaColumn(rep, 'Calibration date'), metaColumn(rep, 'Isotope table'), metaColumn(rep, 'Efficiency function'),
+    ];
+  }
+
   // Activity table flattened: "K-40 Activ (Bq/kg)", "K-40 Uncert. (%)", ...
   function wideActivities(rep) {
     const t = rep.tables.find(isActivityTable);
@@ -117,7 +138,7 @@
   function dataBlocks(reports) {
     const blocks = [];
     const act = reports.map((r) => r.tables.find(isActivityTable)).find(Boolean);
-    const wide = unionRows(reports.map((r) => [...sampleInfo(r), ...wideActivities(r)]));
+    const wide = unionRows(reports.map((r) => [...wideInfo(r), ...wideActivities(r)]));
     blocks.push({ title: act ? act.title : 'Activities', headers: wide.headers, rows: wide.rows });
     const titles = [];
     for (const r of reports) for (const t of r.tables) if (!isActivityTable(t) && !titles.includes(t.title)) titles.push(t.title);
@@ -201,8 +222,17 @@
     return title + ' (all)';
   }
 
-  function buildCombined(reports) {
+  // core: { name, samplingDate, depths[] } (all optional) for Summary / Profiles
+  function buildCombined(reports, core) {
     const wb = XLSX.utils.book_new();
+    if (GammaCore) {
+      const model = GammaCore.buildModel(reports, core);
+      const prof = GammaCore.profilesSheet(model);
+      addSheet(wb, prof.ws, 'Profiles');
+      addSheet(wb, GammaCore.summarySheet(model), 'Summary');
+      addSheet(wb, GammaCore.nuclearSheet(), 'Nuclear data');
+      wb._charts = { sheet: 'Profiles', charts: prof.charts };
+    }
     dataBlocks(reports).forEach((b, i) => {
       const ws = makeSheet([b.headers, ...b.rows]);
       ws['!autofilter'] = { ref: ws['!ref'] };
@@ -217,8 +247,11 @@
     return wb;
   }
 
-  function toArrayBuffer(wb) {
-    return XLSX.write(wb, { bookType: 'xlsx', type: 'array', compression: true });
+  // Returns a Promise<ArrayBuffer>; charts are added after SheetJS has written the file.
+  async function toArrayBuffer(wb) {
+    const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array', compression: true });
+    if (wb._charts && GammaCore) return GammaCore.injectCharts(buf, wb._charts.sheet, wb._charts.charts);
+    return buf;
   }
 
   return { buildSingle, buildCombined, toArrayBuffer, dataBlocks, metadataRows };
