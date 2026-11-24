@@ -78,7 +78,12 @@ const JSZip = require('../vendor/jszip.min.js');
 const C = require('../core.js')(XLSX, JSZip, P);
 const W = require('../workbook.js')(XLSX, P, C);
 const [wide, peakList] = W.dataBlocks([r]);
-assert.deepStrictEqual(wide.headers.slice(0, 6),
+assert.deepStrictEqual(wide.headers.slice(0, 13),
+  ['Sample', 'File', 'Detector', 'Acq.time (live) (s)', 'Acq.time (real)', 'Dead time', 'Count rate',
+    'Acquisition date', 'Mass/Volume (g)', 'Mass/Volume uncertainty (%)',
+    'Calibration date', 'Isotope table', 'Efficiency function']);
+assert.strictEqual(wide.rows[0][3], 1000.5);
+assert.deepStrictEqual(peakList.headers.slice(0, 6),
   ['Sample', 'File', 'Acquisition date', 'Detector', 'Mass/Volume (g)', 'Mass/Volume uncertainty (%)']);
 assert.strictEqual(wide.rows.length, 1); // one row per sample
 const col = (h) => wide.rows[0][wide.headers.indexOf(h)];

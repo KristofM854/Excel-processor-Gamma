@@ -85,6 +85,27 @@
     return out;
   }
 
+  // Generic metadata column: number -> "Field (unit)" value, date -> date, otherwise the text as printed.
+  function metaColumn(rep, field) {
+    const m = rep.metadata.find((x) => x.field.toLowerCase() === field.toLowerCase());
+    if (!m) return [field, null];
+    if (m.kind === 'number') return [field + (m.unit ? ' (' + m.unit + ')' : ''), m.value];
+    if (m.kind === 'date') return [field, m.value];
+    return [field, m.raw === '' ? null : m.raw];
+  }
+
+  // Columns of the one-row-per-sample table: sample, file, detector, then acquisition details.
+  function wideInfo(rep) {
+    const [sample, file, acqDate, detector, mass, massUnc] = sampleInfo(rep);
+    return [
+      sample, file, detector,
+      metaColumn(rep, 'Acq.time (live)'), metaColumn(rep, 'Acq.time (real)'),
+      metaColumn(rep, 'Dead time'), metaColumn(rep, 'Count rate'),
+      acqDate, mass, massUnc,
+      metaColumn(rep, 'Calibration date'), metaColumn(rep, 'Isotope table'), metaColumn(rep, 'Efficiency function'),
+    ];
+  }
+
   // Activity table flattened: "K-40 Activ (Bq/kg)", "K-40 Uncert. (%)", ...
   function wideActivities(rep) {
     const t = rep.tables.find(isActivityTable);
@@ -117,7 +138,7 @@
   function dataBlocks(reports) {
     const blocks = [];
     const act = reports.map((r) => r.tables.find(isActivityTable)).find(Boolean);
-    const wide = unionRows(reports.map((r) => [...sampleInfo(r), ...wideActivities(r)]));
+    const wide = unionRows(reports.map((r) => [...wideInfo(r), ...wideActivities(r)]));
     blocks.push({ title: act ? act.title : 'Activities', headers: wide.headers, rows: wide.rows });
     const titles = [];
     for (const r of reports) for (const t of r.tables) if (!isActivityTable(t) && !titles.includes(t.title)) titles.push(t.title);

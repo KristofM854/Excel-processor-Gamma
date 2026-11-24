@@ -41,13 +41,15 @@ date. Anything else (ranges, file names, versions) stays in *As printed* only.
 **data**: two blocks, each under its table title.
 
 1. **One row per sample** (title `List activity / MDA`): Sample, File,
-   Acquisition date, Detector, Mass/Volume (g), Mass/Volume uncertainty (%),
-   then every isotope's values side by side: `K-40 Activ (Bq/kg)`,
+   Detector, Acq.time (live) (s), Acq.time (real) (s), Dead time (%),
+   Count rate (cps), Acquisition date, Mass/Volume (g),
+   Mass/Volume uncertainty (%), Calibration date, Isotope table,
+   Efficiency function, then every isotope's values side by side: `K-40 Activ (Bq/kg)`,
    `K-40 Uncert. (%)`, `K-40 Uncert. (Bq/kg)`, `K-40 CL (Bq/kg)`,
    `K-40 MDA (Bq/kg)`, and so on, ending with the `SUM` values. Nuclides
    below the detection limit have empty activity cells but keep CL and MDA.
-2. **Peak list** (`List by energies ...`): one row per peak, with the same
-   sample columns in front.
+2. **Peak list** (`List by energies ...`): one row per peak, with Sample,
+   File, Acquisition date, Detector, Mass/Volume and its uncertainty in front.
 
 Date, detector and mass also stay in the metadata sheet.
 
